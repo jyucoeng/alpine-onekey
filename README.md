@@ -6,13 +6,13 @@ Alpine / OpenVZ / LXC 小鸡一键脚本。
 
 ```sh
 # 先看会改什么，不动系统（推荐）
-curl -fsSL https://raw.githubusercontent.com/pingmike2/alpine-onekey/main/alpine-optimize-safe.sh | sh -s -- --dry-run
+curl -fsSL https://raw.githubusercontent.com/jyucoeng/alpine-onekey/main/alpine-optimize-safe.sh | sh -s -- --dry-run
 
 # 正式执行（不改 SSH 端口）
-curl -fsSL https://raw.githubusercontent.com/pingmike2/alpine-onekey/main/alpine-optimize-safe.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jyucoeng/alpine-onekey/main/alpine-optimize-safe.sh | sh
 
 # 需要顺带全量升级时
-curl -fsSL https://raw.githubusercontent.com/pingmike2/alpine-onekey/main/alpine-optimize-safe.sh | sh -s -- --upgrade
+curl -fsSL https://raw.githubusercontent.com/jyucoeng/alpine-onekey/main/alpine-optimize-safe.sh | sh -s -- --upgrade
 ```
 
 v2 相对 v1 的行为变化（v1 备份在 `alpine-optimize-safe.v1.bak.sh`）：
@@ -31,7 +31,7 @@ v2 相对 v1 的行为变化（v1 备份在 `alpine-optimize-safe.v1.bak.sh`）�
 ## 2. 一键 Docker + IPv6
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/pingmike2/alpine-onekey/main/alpine-ipv6-docker.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jyucoeng/alpine-onekey/main/alpine-ipv6-docker.sh | sh
 ```
 
 注意：该脚本会清空 `/var/lib/docker`（`rm -rf /var/lib/docker/*`），已有容器和镜像会丢。
