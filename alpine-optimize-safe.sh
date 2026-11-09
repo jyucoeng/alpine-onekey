@@ -1,6 +1,6 @@
 #!/bin/sh
 # =========================================================
-# alpine-optimize-safe.sh  v2 (2026-10-24)
+# alpine-optimize-safe.sh  v2.1 (2026-11-09)
 # 面向 Alpine / OpenVZ / LXC 小鸡的安全优化脚本
 #
 # 免责：按"现状"提供，无任何担保。会改 sshd / sysctl / apk 源等系统配置，
@@ -15,19 +15,32 @@
 #   5. apk upgrade 改为显式 --upgrade 才执行，并检查磁盘余量
 #   6. 只写内核真正允许写的 sysctl 键，并落 /etc/local.d 持久化
 #
+# v2.1 新增（给上层脚本/自动化按需裁剪，可组合）：
+#   --no-ssh     跳过 SSH 加固段（不改 sshd_config，不重启 sshd）
+#   --no-tools   跳过常用工具安装段
+#   --no-tz      跳过时区段
+#   --sysctl-only  只做内核参数（隐含 --no-ssh --no-tools --no-tz，且不碰 apk 源）
+#
 # 用法：
 #   sh alpine-optimize-safe.sh --dry-run     # 只看会做什么，不改系统
 #   sh alpine-optimize-safe.sh               # 执行（不改 SSH 端口）
 #   sh alpine-optimize-safe.sh --upgrade     # 额外做 apk upgrade
 #   PORT=22 sh alpine-optimize-safe.sh       # 显式指定端口（必须等于当前监听端口）
+#   sh alpine-optimize-safe.sh --no-ssh      # 不碰 sshd（推荐给密钥登录的机器）
+#   sh alpine-optimize-safe.sh --sysctl-only # 只调内核参数（最保守）
 # =========================================================
 set -u
 
 DRY=0; DO_UPGRADE=0; PORT_OVERRIDE=""
+DO_SSH=1; DO_TOOLS=1; DO_TZ=1; DO_APKSRC=1
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
     --upgrade) DO_UPGRADE=1 ;;
+    --no-ssh) DO_SSH=0 ;;
+    --no-tools) DO_TOOLS=0 ;;
+    --no-tz) DO_TZ=0 ;;
+    --sysctl-only) DO_SSH=0; DO_TOOLS=0; DO_TZ=0; DO_APKSRC=0 ;;
     *) echo "未知参数: $a"; exit 1 ;;
   esac
 done
@@ -50,6 +63,10 @@ say "系统: Alpine $(cat /etc/alpine-release)  cgroup 内存上限: $MEM_SHOW"
 [ "$DRY" = "1" ] && warn "dry-run 模式：只打印，不修改"
 
 # ---------- 1. apk 源：保持当前分支，不追 latest-stable ----------
+if [ "$DO_APKSRC" = "0" ]; then
+  say "1/7 APK 源"
+  ok "跳过（--sysctl-only：不碰 apk 源、不跑 apk update）"
+else
 say "1/7 APK 源"
 CUR_BRANCH=$(sed -n 's|.*/alpine/\(v[0-9.]*\)/.*|\1|p' /etc/apk/repositories 2>/dev/null | head -1)
 [ -n "$CUR_BRANCH" ] || CUR_BRANCH="v$(cut -d. -f1,2 /etc/alpine-release)"
@@ -61,6 +78,7 @@ if [ "$DRY" = "0" ]; then
   printf '%s/%s/main\n%s/%s/community\n' "$MIRROR" "$CUR_BRANCH" "$MIRROR" "$CUR_BRANCH" > /etc/apk/repositories
 fi
 doit "apk update -q" || warn "apk update 失败（源不可达），后续安装会跳过"
+fi
 
 # ---------- 2. 磁盘余量 ----------
 say "2/7 磁盘余量检查"
@@ -82,6 +100,10 @@ else
 fi
 
 # ---------- 4. 常用工具 ----------
+if [ "$DO_TOOLS" = "0" ]; then
+  say "4/7 常用工具"
+  ok "跳过（--no-tools / --sysctl-only）"
+else
 say "4/7 常用工具"
 NEED=""
 for p in bash curl wget vim htop nano tzdata openssh sudo ca-certificates iproute2; do
@@ -93,8 +115,13 @@ if [ -n "$NEED" ]; then
 else
   ok "已齐全，无需安装"
 fi
+fi
 
 # ---------- 5. 时区 ----------
+if [ "$DO_TZ" = "0" ]; then
+  say "5/7 时区"
+  ok "跳过（--no-tz / --sysctl-only）"
+else
 say "5/7 时区"
 if [ -f /usr/share/zoneinfo/Asia/Shanghai ]; then
   if cmp -s /usr/share/zoneinfo/Asia/Shanghai /etc/localtime 2>/dev/null; then
@@ -107,8 +134,13 @@ if [ -f /usr/share/zoneinfo/Asia/Shanghai ]; then
 else
   warn "缺 tzdata，跳过"
 fi
+fi
 
 # ---------- 6. SSH（最高风险步骤） ----------
+if [ "$DO_SSH" = "0" ]; then
+  say "6/7 SSH 加固"
+  ok "跳过（--no-ssh / --sysctl-only：不改 sshd_config，不重启 sshd）"
+else
 say "6/7 SSH 加固"
 CUR_PORT=$(ss -lntp 2>/dev/null | awk '/sshd/{split($4,a,":"); print a[length(a)]}' | head -1)
 [ -n "$CUR_PORT" ] || CUR_PORT=22
@@ -177,6 +209,7 @@ if [ "$DRY" = "0" ]; then
     warn "已回滚，未重启 sshd"
   fi
 fi
+fi
 
 # ---------- 7. 内核参数 ----------
 say "7/7 内核参数（只写容器允许的键）"
@@ -184,7 +217,7 @@ SYSCTL_FILE=/etc/sysctl.d/99-alpine-optimize.conf
 doit "mkdir -p /etc/sysctl.d"
 if [ "$DRY" = "0" ]; then
   cat > "$SYSCTL_FILE" <<'EOF'
-# alpine-optimize-safe.sh v2 生成；只含本机实测可写的键
+# alpine-optimize-safe.sh v2.1 生成；只含本机实测可写的键
 net.ipv4.tcp_fastopen=3
 net.ipv4.tcp_slow_start_after_idle=0
 net.ipv4.tcp_mtu_probing=1
@@ -232,7 +265,7 @@ doit "apk cache clean" >/dev/null 2>&1 || true
 if [ "$DRY" = "0" ]; then
   echo "   拥塞控制 : $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
   echo "   somaxconn: $(sysctl -n net.core.somaxconn 2>/dev/null)"
-  echo "   SSH 端口 : $(ss -lntp 2>/dev/null | awk '/sshd/{split($4,a,":"); print a[length(a)]}' | head -1)"
+  echo "   SSH 端口 : $(ss -lntp 2>/dev/null | awk '/sshd/{split($4,a,":"); print a[length(a)]}' | head -1)$( [ "$DO_SSH" = "0" ] && echo ' (未改动)')"
   echo "   磁盘可用 : $(df -Pm / | awk 'NR==2{print $4}') MB"
   echo "   服务状态 : $(for s in sshd sing-box argo komari-agent; do rc-service $s status >/dev/null 2>&1 && printf '%s=ok ' $s; done)"
   echo "   时间     : $(date '+%F %T %Z')"

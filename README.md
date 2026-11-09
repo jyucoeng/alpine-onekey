@@ -13,9 +13,30 @@ curl -fsSL https://raw.githubusercontent.com/jyucoeng/alpine-onekey/main/alpine-
 
 # 需要顺带全量升级时
 curl -fsSL https://raw.githubusercontent.com/jyucoeng/alpine-onekey/main/alpine-optimize-safe.sh | sh -s -- --upgrade
+
+# 不碰 sshd（密钥登录的机器推荐这样跑）
+curl -fsSL https://raw.githubusercontent.com/jyucoeng/alpine-onekey/main/alpine-optimize-safe.sh | sh -s -- --no-ssh
+
+# 最保守：只调内核参数，不装包、不改时区、不动 apk 源和 sshd
+curl -fsSL https://raw.githubusercontent.com/jyucoeng/alpine-onekey/main/alpine-optimize-safe.sh | sh -s -- --sysctl-only
 ```
 
-v2 相对 v1 的行为变化（v1 备份在 `alpine-optimize-safe.v1.bak.sh`）：
+### 参数（v2.1 起，可任意组合）
+
+| 参数 | 作用 |
+|---|---|
+| `--dry-run` | 只打印会做什么，不改系统 |
+| `--upgrade` | 额外执行 `apk upgrade` |
+| `--no-ssh` | 跳过 SSH 加固段：不改 `sshd_config`、不重启 sshd |
+| `--no-tools` | 跳过常用工具安装段 |
+| `--no-tz` | 跳过时区段 |
+| `--sysctl-only` | 只做内核参数（隐含 `--no-ssh --no-tools --no-tz`，且不碰 apk 源） |
+| `PORT=xx` | 环境变量，显式指定 sshd 端口（必须等于当前监听端口） |
+
+> `--no-ssh` 存在的意义：默认流程会把 `PasswordAuthentication` / `PermitRootLogin` 强制设为 `yes` 并重启 sshd。
+> 密钥登录的机器不需要这个降级；被上层自动化调用时（例如 [singbox-tools](https://github.com/jyucoeng/singbox-tools) 的 `sb opt`）一律带上它。
+
+v2 相对 v1 的行为变化（v1 备份在 `alpine-optimize-safe.v1.bak.sh`；v2.1 只是加了上面那组跳过开关，默认行为不变）：
 
 - **不改 SSH 端口**：脚本先探测 sshd 实际监听端口，`PORT` 与之不一致时直接拒绝。
   NAT 小鸡的外网端口由宿主机映射，把内网端口改成外网端口 = 永久失联。
